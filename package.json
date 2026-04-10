@@ -1,0 +1,21 @@
+{
+  "name": "browser-tools",
+  "version": "1.0.0",
+  "description": "Local Playwright + browser-use tooling for reading original papers and navigating complex websites.",
+  "private": true,
+  "scripts": {
+    "chrome:debug": "node ./scripts/chrome-debug.mjs",
+    "pw:smoke": "node ./scripts/playwright-smoke.mjs",
+    "pw:cdp": "node ./scripts/playwright-cdp.mjs",
+    "bu:doctor": "node ./scripts/browser-use-doctor.mjs",
+    "bu:task": "node ./scripts/browser-use-task.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "dotenv": "^17.4.1",
+    "playwright": "^1.59.1"
+  }
+}
