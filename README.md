@@ -82,8 +82,10 @@ npm run bu:task -- "Open arXiv and find the PDF download link for a paper"
 
 ```powershell
 BROWSER_USE_LLM=openai
-BROWSER_USE_MODEL=gpt-5.3-codex
-BROWSER_USE_REASONING_EFFORT=high
+BROWSER_USE_MODEL=gpt-5.4-mini
+BROWSER_USE_REASONING_EFFORT=medium
+BROWSER_USE_PREFERRED_SEARCH_ENGINES=google.com,duckduckgo.com
+BROWSER_USE_PREFERRED_SOURCES=official websites,company help centers,government pages,academic papers,reputable English-language sources
 OPENAI_WIRE_API=responses
 OPENAI_DISABLE_RESPONSE_STORAGE=true
 OPENAI_BASE_URL=https://www.openclaudecode.cn/v1
@@ -106,5 +108,10 @@ OPENAI_API_KEY=你的密钥
 - 某些网站即使用真实浏览器也仍可能触发验证码，这时最稳的方式依然是你手工过一次，我再继续接管后续流程。
 - 当前本地 `browser-use` 包装器默认按 OpenAI/Codex 兼容接口的 `Responses API` 接入。
 - 如果你的兼容网关反而只支持旧的 `chat/completions`，可以把 `.env` 里的 `OPENAI_WIRE_API` 改回 `chat`。
+- 默认推荐 `gpt-5.4-mini + medium reasoning`，兼顾稳定性和成本，比较适合网页检索任务。
+- 默认不强制禁用任何域名，只通过提示词控制优先级。
+- 可以用 `BROWSER_USE_PREFERRED_SEARCH_ENGINES=google.com,duckduckgo.com` 指定浏览器 agent 必须使用搜索引擎时的优先顺序。
+- 如果确实要禁用某些域名，再显式设置 `BROWSER_USE_BLOCKED_DOMAINS=...`，或者运行时追加 `--block-domain ...`。
+- 可以临时在命令行追加 `--block-domain baidu.com` 或 `--model gpt-5.4-mini` 覆盖本次运行。
 - 当前目录是 Windows 优先方案：PowerShell、`.venv\\Scripts\\python.exe`、Chrome/Edge 默认路径都按 Windows 处理。
 - 如果要迁移到另一台 Windows 机器，优先复制整个目录后运行 `setup.ps1`，再补 `.env`。

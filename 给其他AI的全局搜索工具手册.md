@@ -1,4 +1,4 @@
-# 给其他 AI 的全局搜索工具手册
+# 给其他 AI 的全局搜索工具手册（优化版）
 
 这台机器已经安装了一套项目无关、可跨项目复用的本地搜索/浏览工具。
 
@@ -80,8 +80,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File <工具根目录>\bt.ps1 bu:
 # BROWSER_PROFILE_DIR=
 REMOTE_DEBUGGING_PORT=9223
 BROWSER_USE_LLM=openai
-BROWSER_USE_MODEL=gpt-5.3-codex
-BROWSER_USE_REASONING_EFFORT=high
+BROWSER_USE_MODEL=gpt-5.4-mini
+BROWSER_USE_REASONING_EFFORT=medium
 OPENAI_WIRE_API=responses
 OPENAI_DISABLE_RESPONSE_STORAGE=true
 OPENAI_CODEX_COMPAT=true
@@ -98,50 +98,90 @@ OPENAI_API_KEY=
 - 如果 `CHROME_PATH` 留空，脚本会优先尝试系统默认的 Chrome / Edge 安装路径。
 - 如果 `BROWSER_PROFILE_DIR` 留空，脚本会默认使用 `<工具根目录>\profiles\shared`。
 
-## 5. 推荐工作流
+## 5. 推荐流程（优化版）
 
-### 场景 A：普通网页查看、验证页面可访问
-
-1. 先运行：
+### 步骤 0：每次任务前先体检（必做）
 
 ```powershell
 .\bt.ps1 pw:smoke
+.\bt.ps1 bu:doctor
 ```
 
-2. 如果只是需要稳定打开某个页面、看标题、做简单抓取，优先用 `Playwright`。
+只要这两步任一步失败，不要直接跑复杂任务，先修环境。
 
-### 场景 B：需要登录、验证码、学校资源、付费站点
+### 步骤 1：先选执行路径，不要混跑
 
-1. 先启动真实 Chrome：
+- 页面结构稳定、目标明确：优先 `Playwright`
+- 需要登录态复用：先 `chrome:debug`，再 `pw:cdp` 或 `bu:task -- --cdp-url ...`
+- 需要自主探索、多轮导航：再上 `browser-use`
+
+### 步骤 2：browser-use 任务要“短指令、分段跑”
+
+- 单次任务只放一个主要目标，避免把“搜索+比对+写总结”塞进一次运行。
+- 如果任务超过 5 个动作，拆成多个 `bu:task` 子任务。
+- 优先先跑可验证的小任务，再跑长任务。
+
+示例：
 
 ```powershell
-.\bt.ps1 chrome:debug
+.\bt.ps1 bu:task -- "Find the official sustainability report page for brand X"
+.\bt.ps1 bu:task -- "Open that page and extract worker wage commitments"
 ```
 
-2. 在打开的 Chrome 中手工完成登录或验证码。
-3. 后续优先复用这个会话，不要重新起一个抢同一 profile 的浏览器。
-4. 精确操作时优先用 `pw:cdp`。
-5. 复杂多步任务时再用 `browser-use`，并优先通过 `BROWSER_CDP_URL` 连接到现有会话。
+### 步骤 3：涉及登录/验证码时的最稳流程
+
+1. `.\bt.ps1 chrome:debug`
+2. 在真实 Chrome 手工登录一次
+3. 精确抓取优先 `.\bt.ps1 pw:cdp -- <URL>`
+4. 复杂流程才用 `browser-use`，并尽量附着已有会话（`--cdp-url`）
+
+### 步骤 4：任务结束后做收尾（必做）
+
+1. 如果开过 `chrome:debug`，手工关闭该调试 Chrome 窗口。
+2. 如果出现“页面还在自己跳转/不断开新页”，执行清理命令：
+
+```powershell
+Get-CimInstance Win32_Process |
+  Where-Object { $_.CommandLine -match 'browser-use-user-data-dir|playwright_chromiumdev_profile|cliDaemon.js profile-highlight-smoke' } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+```
+
+3. 可选复查（确认相关调试端口已释放）：
+
+```powershell
+Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $_.LocalPort -in @(9223,52410,52715,62158) }
+```
+
+## 6. 场景化建议
+
+### 场景 A：普通网页查看、验证可访问
+
+1. `.\bt.ps1 pw:smoke`
+2. 优先用 `Playwright` 做打开页面、标题检查、简单抓取
+
+### 场景 B：登录、验证码、学校资源、付费站点
+
+1. `.\bt.ps1 chrome:debug`
+2. 手工完成登录/验证码
+3. 后续复用同一会话，不要重复抢同一 profile
+4. 精确操作优先 `pw:cdp`
+5. 复杂多步任务再上 `browser-use`
 
 ### 场景 C：论文原文、PDF、开放网页材料
 
-1. 优先找原始 PDF、官方页面、开放获取页面。
-2. 下载内容默认会落在：
+1. 优先找原始 PDF、官方页面、开放获取页面
+2. 下载默认落在 `<工具根目录>\downloads`
+3. 需要放回项目目录时，单独复制，不要改全局工具
 
-```text
-<工具根目录>\downloads
-```
-
-3. 如果当前项目需要把下载结果放回项目目录，再单独复制，不要修改这套全局工具本身。
-
-## 6. 什么时候用哪一个
+## 7. 什么时候用哪一个
 
 - 任务稳定、页面结构清晰、需要精确复现：优先 `Playwright`
 - 任务复杂、需要多轮导航和判断：优先 `browser-use`
 - 需要登录站点、验证码、人工过认证：先 `chrome:debug`
 - 只想确认环境是否正常：先 `pw:smoke` 或 `bu:doctor`
 
-## 7. 注意事项
+## 8. 注意事项（补强）
 
 - 不要把这套全局工具当成某个项目的内部脚本目录。
 - 不要把旧项目内副本和这份全局目录混着写。
@@ -150,8 +190,16 @@ OPENAI_API_KEY=
 - 某些网站会持续触发验证码，自动化不能保证通过，这时应让用户先手工过一次。
 - 共享 profile 正在被真实 Chrome 使用时，优先走 CDP 连接，而不是直接重复占用同一个 profile 目录。
 - 全局下载目录是共享的，任务结束后请自行判断是否需要整理或转移文件。
+- 外层调用如果设置了硬超时，可能导致子进程来不及优雅退出；此时请执行“步骤 4 收尾”里的清理命令。
 
-## 8. 可直接复制给其他 AI 的说明
+## 9. 常见故障速查
+
+- `bu:task` 无输出卡住：先 `Ctrl+C`，再跑一次 `bu:doctor`，必要时降级成分段任务。
+- Chrome 不断弹新页面：执行“步骤 4 收尾”的进程清理命令。
+- CDP 连不上：确认 `chrome:debug` 还在运行，且端口 `9223` 正在监听。
+- 编码乱码：优先把当前终端输出编码切到 UTF-8 再重试。
+
+## 10. 可直接复制给其他 AI 的说明
 
 你可以把下面这段直接发给另一个 AI：
 
@@ -160,18 +208,19 @@ OPENAI_API_KEY=
 把当前这份手册所在目录记作 <工具根目录>。
 不要默认使用旧的项目内副本。
 
-如果当前终端已经在 <工具根目录>，优先直接运行：
+执行顺序建议：
+1) 先体检：.\bt.ps1 pw:smoke 和 .\bt.ps1 bu:doctor
+2) 再执行任务：优先 Playwright；复杂多步再用 browser-use
+3) 任务后收尾：关闭调试 Chrome；异常时清理 browser-use/playwright 残留进程
 
-.\bt.ps1 pw:smoke
+常用命令：
 .\bt.ps1 chrome:debug
 .\bt.ps1 pw:cdp -- https://example.com
-.\bt.ps1 bu:doctor
 .\bt.ps1 bu:task -- "your task"
 
-如果当前终端不在 <工具根目录>，就把命令里的 bt.ps1 换成 <工具根目录>\bt.ps1。
+如果当前终端不在 <工具根目录>，把命令里的 bt.ps1 换成 <工具根目录>\bt.ps1。
 
 Playwright 不需要 API key。
-browser-use 需要在 <工具根目录>\.env 中填写 OPENAI_API_KEY。
-browser-use 当前默认走 Responses API，并默认关闭响应存储，同时默认开启 Codex 兼容身份字段。
-如果网站需要登录或验证码，先运行 chrome:debug，用真实 Chrome 手工登录后再继续自动化。
+browser-use 需要在 <工具根目录>\.env 里填写 OPENAI_API_KEY。
+如果网站需要登录或验证码，先 chrome:debug，用真实 Chrome 手工登录后再继续自动化。
 ```

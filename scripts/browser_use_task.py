@@ -2,7 +2,9 @@ import argparse
 import asyncio
 import importlib.util
 import os
+import re
 from pathlib import Path
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 
@@ -29,6 +31,8 @@ DEFAULT_BROWSER_PATHS = [
     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
 ]
 
+URL_PATTERN = re.compile(r"https?://[^\s\"'<>]+", re.IGNORECASE)
+
 
 def resolve_browser_binary() -> str:
     for candidate in DEFAULT_BROWSER_PATHS:
@@ -44,10 +48,85 @@ def parse_bool_env(name: str, default: bool) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
+def parse_csv_env(name: str, default: str = "") -> list[str]:
+    raw = os.getenv(name, default)
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+def is_blocked_domain(hostname: str, blocked_domains: list[str]) -> bool:
+    normalized_host = hostname.strip().lower().strip(".")
+    for blocked in blocked_domains:
+        normalized_blocked = blocked.strip().lower().strip(".")
+        if not normalized_blocked:
+            continue
+        if normalized_host == normalized_blocked or normalized_host.endswith(f".{normalized_blocked}"):
+            return True
+    return False
+
+
+def strip_blocked_urls(task: str, blocked_domains: list[str]) -> tuple[str, list[str]]:
+    removed_urls: list[str] = []
+
+    def replace(match: re.Match[str]) -> str:
+        url = match.group(0)
+        hostname = (urlparse(url).hostname or "").strip().lower()
+        if hostname and is_blocked_domain(hostname, blocked_domains):
+            removed_urls.append(url)
+            return ""
+        return url
+
+    sanitized_task = URL_PATTERN.sub(replace, task)
+    sanitized_task = " ".join(sanitized_task.split())
+    sanitized_task = re.sub(r"(?i)\bopen\s+and\s+search\s+for\b", "Search for", sanitized_task)
+    sanitized_task = re.sub(r"(?i)\bopen\s+and\s+find\b", "Find", sanitized_task)
+    sanitized_task = re.sub(r"(?i)\bopen\s+and\s+", "", sanitized_task)
+    sanitized_task = sanitized_task.lstrip(" ;,.")
+    return sanitized_task, removed_urls
+
+
+def build_agent_task(task: str, extra_blocked_domains: list[str] | None = None) -> str:
+    blocked_domains = parse_csv_env("BROWSER_USE_BLOCKED_DOMAINS", "")
+    if extra_blocked_domains:
+        blocked_domains.extend(extra_blocked_domains)
+    blocked_domains = sorted({domain.strip().lower() for domain in blocked_domains if domain.strip()})
+
+    preferred_search_engines = parse_csv_env(
+        "BROWSER_USE_PREFERRED_SEARCH_ENGINES",
+        "google.com,duckduckgo.com",
+    )
+    preferred_sources = parse_csv_env(
+        "BROWSER_USE_PREFERRED_SOURCES",
+        "official websites,company help centers,government pages,academic papers,reputable English-language sources",
+    )
+
+    sanitized_task, removed_urls = strip_blocked_urls(task, blocked_domains)
+    if not sanitized_task:
+        sanitized_task = task
+
+    rules = [
+        "Execution rules:",
+        "- Work efficiently. Minimize unnecessary searches, page reloads, and repeated navigation.",
+        "- Prefer direct navigation to the target organization's official site or other authoritative sources before using a general search engine.",
+    ]
+
+    if blocked_domains:
+        rules.append(f"- Do not use these blocked domains: {', '.join(blocked_domains)}.")
+    if preferred_search_engines:
+        rules.append(
+            f"- If a general search engine is necessary, prefer these in order: {', '.join(preferred_search_engines)}."
+        )
+    if preferred_sources:
+        rules.append(f"- Prefer these source types: {', '.join(preferred_sources)}.")
+    if removed_urls:
+        rules.append(f"- Ignore blocked URLs from the original prompt: {', '.join(removed_urls)}.")
+
+    return "\n".join(rules) + "\n\nUser task:\n" + sanitized_task
+
+
 def build_llm():
     provider = os.getenv("BROWSER_USE_LLM", "openai").strip().lower()
-    model = os.getenv("BROWSER_USE_MODEL", "gpt-5.3-codex").strip()
-    reasoning_effort = os.getenv("BROWSER_USE_REASONING_EFFORT", "high").strip().lower()
+    model = os.getenv("BROWSER_USE_MODEL", "gpt-5.4-mini").strip()
+    reasoning_effort = os.getenv("BROWSER_USE_REASONING_EFFORT", "medium").strip().lower()
     wire_api = os.getenv("OPENAI_WIRE_API", "responses").strip().lower()
     disable_response_storage = parse_bool_env("OPENAI_DISABLE_RESPONSE_STORAGE", True)
     codex_compat_mode = parse_bool_env("OPENAI_CODEX_COMPAT", True)
@@ -75,7 +154,7 @@ def build_llm():
 
         if wire_api == "responses":
             return ChatOpenAIResponses(
-                model=model or "gpt-5.3-codex",
+                model=model or "gpt-5.4-mini",
                 api_key=api_key,
                 base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("BROWSER_USE_API_BASE") or None,
                 reasoning_effort=reasoning_effort,
@@ -90,7 +169,7 @@ def build_llm():
             )
 
         return ChatOpenAI(
-            model=model or "gpt-5.3-codex",
+            model=model or "gpt-5.4-mini",
             api_key=api_key,
             base_url=os.getenv("OPENAI_BASE_URL") or os.getenv("BROWSER_USE_API_BASE") or None,
             reasoning_effort=reasoning_effort,
@@ -148,6 +227,12 @@ async def main():
     parser.add_argument("--headed", action="store_true", help="Force headed mode when launching a new browser.")
     parser.add_argument("--provider", help="Override BROWSER_USE_LLM for this run.")
     parser.add_argument("--model", help="Override BROWSER_USE_MODEL for this run.")
+    parser.add_argument(
+        "--block-domain",
+        action="append",
+        default=[],
+        help="Block a domain for this run. Can be passed multiple times.",
+    )
     args = parser.parse_args()
 
     if args.provider:
@@ -158,6 +243,7 @@ async def main():
     task = " ".join(args.task).strip()
     if not task:
         raise SystemExit("Task cannot be empty.")
+    task = build_agent_task(task, extra_blocked_domains=args.block_domain)
 
     browser = build_browser(args)
     llm = build_llm()
