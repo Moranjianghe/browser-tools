@@ -115,3 +115,37 @@ OPENAI_API_KEY=你的密钥
 - 可以临时在命令行追加 `--block-domain baidu.com` 或 `--model gpt-5.4-mini` 覆盖本次运行。
 - 当前目录是 Windows 优先方案：PowerShell、`.venv\\Scripts\\python.exe`、Chrome/Edge 默认路径都按 Windows 处理。
 - 如果要迁移到另一台 Windows 机器，优先复制整个目录后运行 `setup.ps1`，再补 `.env`。
+
+## Codex Skill
+
+本仓库提供可分享的 Codex skill 模板：`skills/browser-tools/`。
+
+### 安装（Windows / PowerShell）
+
+在仓库根目录执行：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install-codex-skill.ps1
+```
+
+安装脚本会把 skill 同步到 `~\.codex\skills\browser-tools`（或 `$env:CODEX_HOME\skills\browser-tools`），并在本机安装副本中写入当前仓库路径。
+
+### 验证
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ~\.codex\skills\browser-tools\scripts\invoke-browser-tools.ps1 pw:smoke
+powershell -NoProfile -ExecutionPolicy Bypass -File ~\.codex\skills\browser-tools\scripts\invoke-browser-tools.ps1 bu:doctor
+```
+
+### 在 Codex 中使用
+
+在对话中显式提到 `$browser-tools`，例如：
+
+```text
+Use $browser-tools to open the target site via CDP and extract the PDF link.
+```
+
+### 隐私与分享
+
+- 仓库中的 skill 模板不包含用户绝对路径或用户名。
+- 本机绝对路径只写入本地安装副本，不应提交到仓库。

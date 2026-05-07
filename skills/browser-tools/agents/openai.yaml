@@ -1,0 +1,4 @@
+interface:
+  display_name: "Browser Tools"
+  short_description: "Local Windows browser automation with Playwright and browser-use"
+  default_prompt: "Use $browser-tools to navigate sites, reuse a local logged-in Chrome session, and run Playwright or browser-use tasks from a local browser-tools checkout."
