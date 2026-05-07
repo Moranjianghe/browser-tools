@@ -18,7 +18,8 @@ function Get-PythonCommand {
 
 Push-Location $projectRoot
 try {
-  $pythonCommand = Get-PythonCommand
+  # Force array semantics so single-item return values don't degrade to a string.
+  $pythonCommand = @(Get-PythonCommand)
   $pythonExe = $pythonCommand[0]
   $pythonArgs = @($pythonCommand | Select-Object -Skip 1)
 
